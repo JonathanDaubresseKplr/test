@@ -1,0 +1,70 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+  namespace: default
+  labels:
+    app: test
+spec:
+  strategy:
+    type: RollingUpdate
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      annotations:
+          # To allow autoscaler pod Eviction even if Vault emptyDir volume is present
+          cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+      labels:
+        app: test
+    spec:
+      containers:
+        - name: test
+          image: nginx:1.14.2
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              memory: 50Mi
+              cpu: 10m
+
+          lifecycle:
+            # k8s sends SIGTERM to the pod at the same time as it *starts*, not finishes removing it from the endpoints, so we must
+            # wait for it to finish that to avoid requests being routed to an already shutting-down pod         
+            preStop:                   
+              exec:                    
+                command:               
+                - sh
+                - -c
+                - "sleep 5"
+                
+          # remove dead pods after 1min (we are not in a hurry since they are taken offline by the readiness probe)
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 12
+
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            timeoutSeconds: 4
+            failureThreshold: 2
+
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+
